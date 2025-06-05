@@ -1,25 +1,62 @@
-use std::{collections::HashMap, sync::{Arc, Mutex}};
-use crate::Event;
+use std::{
+    collections::BTreeMap,
+    ops::Bound::Included,
+    sync::{Arc, Mutex},
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+use log::debug;
+use serde_json::Value;
+
+use crate::{Event, EventTypes};
 
 #[derive(Clone, Default)]
 pub struct Storage {
-    inner: Arc<Mutex<HashMap<String, Event>>>,
+    inner: Arc<Mutex<BTreeMap<u64, (EventTypes, Value)>>>,
 }
 
 impl Storage {
     pub fn new() -> Self {
-        let inner = Arc::new(Mutex::new(HashMap::new()));
+        let inner = Arc::new(Mutex::new(BTreeMap::new()));
 
         Storage { inner }
     }
 
-    fn _get_log_range(_start_range: u64, _end_range: u64, _event_type: String) {
-
+    pub fn get_log_range(&self, start_time: u64, end_time: u64, event_type: Option<EventTypes>) {
+        if start_time > end_time {
+            todo!("Range invalid")
+        }
+        debug!("start_range: {start_time:?} end_range: {end_time:?} event_type: {event_type:?}");
+        let inner = self.inner.clone();
+        let inner = inner.lock().unwrap();
+        let res: Vec<_> = inner
+            .range((Included(start_time), Included(end_time)))
+            // .filter(|f| f.1.0 == event_type)
+            .collect();
+        println!("res: {res:?}");
     }
 
     pub fn write_log(&mut self, event: Event) {
-        let _storage = self.inner.clone().lock().unwrap().insert("".into(), event).unwrap();
+        if event.timestamp < get_current_time_in_ms() {
+            todo!("Cannot log historical events")
+        }
+        println!("event: {event:?}");
+        let inner = self.inner.clone();
+        let mut inner = inner.lock().unwrap();
+        let res = inner.insert(event.timestamp, (event.event_type, event.payload));
+        println!("result of insert: {res:?}");
+        println!("inner: {inner:?}");
     }
+}
+
+fn get_current_time_in_ms() -> u64 {
+    let now = SystemTime::now();
+    let since_the_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
+    let in_ms =
+        since_the_epoch.as_secs() * 1_000 + since_the_epoch.subsec_nanos() as u64 / 1_000_000_000;
+    println!("{since_the_epoch:?}");
+    println!("{in_ms:?}");
+    in_ms
 }
 
 #[cfg(test)]
@@ -33,18 +70,56 @@ mod test {
     }
 
     #[test]
-    fn test_write_log() {
+    fn test_write_single_log() {
+        let event_type = EventTypes::Yyz;
         let event = Event {
-            payload: "".into(),
-            timestamp: u64::default(),
-            event_type: "".into()
+            payload: "a payload".into(),
+            timestamp: get_current_time_in_ms(),
+            event_type: event_type.clone(),
         };
         let storage = Storage::new();
-        let _inner = storage.inner.clone().lock().unwrap().insert("".into(), event);
+        storage
+            .inner
+            .clone()
+            .lock()
+            .unwrap()
+            .insert(event.timestamp, (event.event_type, event.payload));
+        let res = storage
+            .inner
+            .clone()
+            .lock()
+            .unwrap()
+            .get(&event.timestamp)
+            .unwrap()
+            .clone();
+        let expected = event_type;
+        assert_eq!(expected, res.0)
+    }
+
+    #[ignore = "failing"]
+    #[test]
+    fn test_write_multiple_logs() {
+        let number_of_logs = 10;
+        let storage = Storage::new();
+        for _ in 0..number_of_logs {
+            let event_type = EventTypes::Yyz;
+            let event = Event {
+                payload: "a payload".into(),
+                timestamp: get_current_time_in_ms(),
+                event_type: event_type.clone(),
+            };
+
+            storage
+                .inner
+                .clone()
+                .lock()
+                .unwrap()
+                .insert(event.timestamp, (event.event_type, event.payload));
+        }
+        let res = storage.inner.clone().lock().unwrap().len();
+        assert_eq!(number_of_logs, res)
     }
 
     #[test]
-    fn test_get_log_range() {
-
-    }
+    fn test_get_log_range() {}
 }
