@@ -24,7 +24,7 @@ pub async fn write_event(
     };
     println!("{event:?}");
 
-    state.write_log_to_storage(event);
+    state.write_log_to_storage(event).await;
 
     StatusCode::OK
 }
@@ -46,7 +46,9 @@ pub async fn read_event(
     println!("end_time: {:?}", params.end);
     println!("event_type: {:?}", params.event_type);
 
-    let res = state.get_logs_in_range(params.start, params.end, params.event_type);
+    let res = state
+        .get_logs_in_range(params.start, params.end, params.event_type)
+        .await;
     let t = Json(res);
     debug!("{t:?}");
     (StatusCode::OK, t)
