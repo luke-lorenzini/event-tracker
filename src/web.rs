@@ -19,10 +19,20 @@ pub struct Params {
     event_type: Option<EventType>,
 }
 
+#[allow(clippy::unused_async)]
+pub async fn root() -> impl IntoResponse {
+    (StatusCode::OK, "Welcome home")
+}
+
+#[allow(clippy::unused_async)]
+pub async fn health_check() -> impl IntoResponse {
+    (StatusCode::OK, "Healthy")
+}
+
 pub async fn write_event(
-    State(mut state): State<Storage>,
+    State(state): State<Storage>,
     Json(payload): Json<Event>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, StatusCode> {
     debug!("write_event");
     let event = Event {
         payload: payload.payload,
@@ -31,15 +41,16 @@ pub async fn write_event(
     };
     debug!("{event:?}");
 
-    state.write_log_to_storage(event).await;
-
-    StatusCode::OK.into_response()
+    match state.write_log_to_storage(event).await {
+        Ok(()) => Ok(StatusCode::OK),
+        Err(_) => Err(StatusCode::BAD_REQUEST),
+    }
 }
 
 pub async fn read_event(
     State(state): State<Storage>,
     Query(params): Query<Params>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, StatusCode> {
     debug!("read_event");
     debug!("start_time: {:?}", params.start);
     debug!("end_time: {:?}", params.end);
@@ -47,10 +58,11 @@ pub async fn read_event(
 
     let logs = state
         .get_logs_in_range(params.start, params.end, params.event_type)
-        .await;
+        .await
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
     let json_logs = Json(logs);
     debug!("{json_logs:?}");
-    (StatusCode::OK, json_logs)
+    Ok((StatusCode::OK, json_logs))
 }
 
 #[cfg(test)]
@@ -62,18 +74,45 @@ mod test {
     use crate::get_current_time_in_ms;
 
     #[tokio::test]
+    async fn test_root() {
+        let res = root().await.into_response();
+        assert_eq!(StatusCode::OK, res.status())
+    }
+
+    #[tokio::test]
+    async fn test_health_check() {
+        let res = health_check().await.into_response();
+        assert_eq!(StatusCode::OK, res.status())
+    }
+
+    #[tokio::test]
     async fn test_write_event() {
         let event_type = EventType::Yyz;
         let event = Event {
             payload: "a payload".into(),
-            timestamp: get_current_time_in_ms(),
+            timestamp: get_current_time_in_ms().unwrap(),
             event_type: event_type.clone(),
         };
         let json = Json(event);
         let storage = Storage::new();
         let state = State(storage);
-        let _res = write_event(state, json).await;
-        //    assert_eq!(200, res)
+        let res = write_event(state, json).await.into_response();
+        assert_eq!(StatusCode::OK, res.status())
+    }
+
+    #[tokio::test]
+    async fn test_write_event_bad_params() {
+        let event_type = EventType::Yyz;
+        let event = Event {
+            payload: "a payload".into(),
+            timestamp: get_current_time_in_ms().unwrap() * 2,
+            event_type: event_type.clone(),
+        };
+        let json = Json(event);
+        let storage = Storage::new();
+        let state = State(storage);
+        let res = write_event(state, json).await.into_response();
+        assert_eq!(StatusCode::BAD_REQUEST, res.status())
     }
 
     #[tokio::test]
@@ -81,7 +120,7 @@ mod test {
         let event_type = EventType::Yyz;
         let event = Event {
             payload: "a payload".into(),
-            timestamp: get_current_time_in_ms(),
+            timestamp: get_current_time_in_ms().unwrap(),
             event_type: event_type.clone(),
         };
         let json = Json(event);
@@ -91,6 +130,7 @@ mod test {
 
         let uri: Uri = "http://localhost:3000/events?".parse().unwrap();
         let query = Query::try_from_uri(&uri).unwrap();
-        let _res = read_event(state, query).await;
+        let res = read_event(state, query).await.into_response();
+        assert_eq!(StatusCode::OK, res.status())
     }
 }

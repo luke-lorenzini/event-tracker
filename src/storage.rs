@@ -6,7 +6,7 @@ use tokio::sync::Mutex;
 
 use crate::{
     get_current_time_in_ms,
-    types::{Event, EventType},
+    types::{ErrorTypes, Event, EventType, TrackerResult},
 };
 
 type Log = (u64, (EventType, Value));
@@ -29,18 +29,20 @@ impl Storage {
         start_time: Option<u64>,
         end_time: Option<u64>,
         event_type: Option<EventType>,
-    ) -> Vec<Log> {
+    ) -> TrackerResult<Vec<Log>> {
         debug!("start_range: {start_time:?} end_range: {end_time:?} event_type: {event_type:?}");
         if let (Some(start_time), Some(end_time)) = (start_time, end_time) {
             if start_time > end_time {
-                todo!("Range invalid")
+                return Err(ErrorTypes::InvalidRange(
+                    "Start time must be earlier than end time".into(),
+                ));
             }
         }
 
         let inner = self.inner.lock().await;
 
         if inner.is_empty() {
-            todo!("Nothing to see here")
+            return Err(ErrorTypes::EmptyLogFile);
         }
 
         let start_time = start_time.unwrap_or(0);
@@ -51,28 +53,24 @@ impl Storage {
                 .0,
         );
 
-        match event_type {
-            Some(event_type) => inner
-                .range((Included(start_time), Included(end_time)))
-                .filter(|(_, (et, _))| et == &event_type.clone())
-                .map(|(k, v)| (*k, v.clone()))
-                .collect(),
-            None => inner
-                .range((Included(start_time), Included(end_time)))
-                .map(|(k, v)| (*k, v.clone()))
-                .collect(),
-        }
+        Ok(inner
+            .range((Included(start_time), Included(end_time)))
+            .filter(|(_, (et, _))| event_type.as_ref().is_none_or(|e| e == et))
+            .map(|(k, v)| (*k, v.clone()))
+            .collect())
     }
 
-    pub async fn write_log_to_storage(&mut self, event: Event) {
+    pub async fn write_log_to_storage(&self, event: Event) -> TrackerResult<()> {
         debug!("event: {event:?}");
-        if event.timestamp < get_current_time_in_ms() {
-            todo!("Cannot log historical events")
+        if event.timestamp > get_current_time_in_ms()? {
+            return Err(ErrorTypes::InvalidRange("Cannot log future events".into()));
         }
 
         let mut inner = self.inner.lock().await;
         let _res = inner.insert(event.timestamp, (event.event_type, event.payload));
-        debug!("inner: {inner:?}");
+        println!("inner: {inner:?}");
+
+        Ok(())
     }
 }
 
@@ -94,7 +92,7 @@ mod test {
         let event_type = EventType::Yyz;
         let event = Event {
             payload: "a payload".into(),
-            timestamp: get_current_time_in_ms(),
+            timestamp: get_current_time_in_ms().unwrap(),
             event_type: event_type.clone(),
         };
         let storage = Storage::new();
@@ -113,11 +111,11 @@ mod test {
             let event_type = EventType::Yyz;
             let event = Event {
                 payload: "a payload".into(),
-                timestamp: get_current_time_in_ms(),
+                timestamp: get_current_time_in_ms().unwrap(),
                 event_type: event_type.clone(),
             };
 
-            thread::sleep(Duration::from_millis(1000));
+            thread::sleep(Duration::from_millis(1));
 
             let mut inner = storage.inner.lock().await;
             inner.insert(event.timestamp, (event.event_type, event.payload));
@@ -128,76 +126,131 @@ mod test {
 
     #[tokio::test]
     async fn test_write_then_read_log() {
-        let mut storage = Storage::new();
+        let storage = Storage::new();
         let event_type = EventType::Yyz;
         let event = Event {
             payload: "a payload".into(),
-            timestamp: get_current_time_in_ms(),
+            timestamp: get_current_time_in_ms().unwrap(),
             event_type: event_type.clone(),
         };
-        storage.write_log_to_storage(event).await;
+        storage.write_log_to_storage(event).await.unwrap();
 
-        let res = storage.get_logs_in_range(None, None, None).await;
+        let res = storage.get_logs_in_range(None, None, None).await.unwrap();
         assert_eq!(1, res.len())
     }
 
     #[tokio::test]
-    async fn test_write_then_read_specifc_event() {
-        let mut storage = Storage::new();
+    async fn test_write_then_read_multiple_events_filtered() {
+        let storage = Storage::new();
         let event_type = EventType::Yyz;
         let event = Event {
-            payload: "a payload".into(),
-            timestamp: get_current_time_in_ms(),
+            payload: "1st payload".into(),
+            timestamp: get_current_time_in_ms().unwrap(),
             event_type: event_type.clone(),
         };
-        storage.write_log_to_storage(event).await;
+        storage.write_log_to_storage(event).await.unwrap();
+        thread::sleep(Duration::from_millis(1));
+
+        let event_type = EventType::Xxx;
+        let event = Event {
+            payload: "2nd payload".into(),
+            timestamp: get_current_time_in_ms().unwrap(),
+            event_type: event_type.clone(),
+        };
+        storage.write_log_to_storage(event).await.unwrap();
+        thread::sleep(Duration::from_millis(1));
+
+        // let event_type = EventType::Xxx;
+        let event = Event {
+            payload: "3rd payload".into(),
+            timestamp: get_current_time_in_ms().unwrap(),
+            event_type: event_type.clone(),
+        };
+        storage.write_log_to_storage(event).await.unwrap();
+        thread::sleep(Duration::from_millis(1));
 
         let res = storage
-            .get_logs_in_range(None, None, Some(event_type))
-            .await;
+            .get_logs_in_range(None, None, Some(EventType::Yyz))
+            .await
+            .unwrap();
         assert_eq!(1, res.len())
     }
 
     #[tokio::test]
-    #[should_panic]
-    async fn test_write_historical_event() {
-        let mut storage = Storage::new();
+    async fn test_write_then_read_multiple_events() {
+        let storage = Storage::new();
         let event_type = EventType::Yyz;
         let event = Event {
-            payload: "a payload".into(),
-            timestamp: 0,
+            payload: "1st payload".into(),
+            timestamp: get_current_time_in_ms().unwrap(),
             event_type: event_type.clone(),
         };
-        storage.write_log_to_storage(event).await;
+        storage.write_log_to_storage(event).await.unwrap();
+        thread::sleep(Duration::from_millis(1));
 
-        storage.get_logs_in_range(None, None, None).await;
+        let event_type = EventType::Xxx;
+        let event = Event {
+            payload: "2nd payload".into(),
+            timestamp: get_current_time_in_ms().unwrap(),
+            event_type: event_type.clone(),
+        };
+        storage.write_log_to_storage(event).await.unwrap();
+        thread::sleep(Duration::from_millis(1));
+
+        // let event_type = EventType::Xxx;
+        let event = Event {
+            payload: "3rd payload".into(),
+            timestamp: get_current_time_in_ms().unwrap(),
+            event_type: event_type.clone(),
+        };
+        storage.write_log_to_storage(event).await.unwrap();
+        thread::sleep(Duration::from_millis(1));
+
+        let res = storage.get_logs_in_range(None, None, None).await.unwrap();
+        assert_eq!(3, res.len())
     }
 
     #[tokio::test]
-    #[should_panic]
+    async fn test_write_future_event() {
+        let storage = Storage::new();
+        let event_type = EventType::Yyz;
+        let event = Event {
+            payload: "a payload".into(),
+            timestamp: get_current_time_in_ms().unwrap() * 2,
+            event_type: event_type.clone(),
+        };
+        let res = storage.write_log_to_storage(event).await;
+        assert!(res.is_err())
+    }
+
+    #[tokio::test]
     async fn test_invalid_time_range() {
         let storage = Storage::new();
-        storage.get_logs_in_range(Some(10), Some(0), None).await;
+        let res = storage.get_logs_in_range(Some(10), Some(0), None).await;
+        assert!(res.is_err())
     }
 
     #[tokio::test]
     async fn test_valid_time_range() {
-        let mut storage = Storage::new();
+        let storage = Storage::new();
         let event_type = EventType::Yyz;
         let event = Event {
             payload: "a payload".into(),
-            timestamp: get_current_time_in_ms(),
+            timestamp: get_current_time_in_ms().unwrap(),
             event_type: event_type.clone(),
         };
-        storage.write_log_to_storage(event).await;
-        storage.get_logs_in_range(Some(0), Some(10), None).await;
+        storage.write_log_to_storage(event).await.unwrap();
+        storage
+            .get_logs_in_range(Some(0), Some(10), None)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
-    #[should_panic]
     async fn test_get_before_write() {
         let storage = Storage::new();
-        storage.get_logs_in_range(None, None, None).await;
+        let res = storage.get_logs_in_range(None, None, None).await;
+        assert!(res.is_err())
     }
 
     #[test]
