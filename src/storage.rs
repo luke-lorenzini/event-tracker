@@ -1,14 +1,13 @@
-use std::{
-    collections::BTreeMap,
-    ops::Bound::Included,
-    sync::Arc,
-};
+use std::{collections::BTreeMap, ops::Bound::Included, sync::Arc};
 
 use log::debug;
 use serde_json::Value;
 use tokio::sync::Mutex;
 
-use crate::{types::{Event, EventTypes} ,get_current_time_in_ms};
+use crate::{
+    get_current_time_in_ms,
+    types::{Event, EventTypes},
+};
 
 type Log = (u64, (EventTypes, Value));
 
@@ -149,7 +148,9 @@ mod test {
         };
         storage.write_log_to_storage(event).await;
 
-        let res = storage.get_logs_in_range(None, None, Some(event_type)).await;
+        let res = storage
+            .get_logs_in_range(None, None, Some(event_type))
+            .await;
         assert_eq!(1, res.len())
     }
 

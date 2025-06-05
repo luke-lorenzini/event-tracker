@@ -73,8 +73,8 @@ mod test {
         let json = Json(event);
         let storage = Storage::new();
         let state = State(storage);
-       let _res = write_event(state, json).await;
-    //    assert_eq!(200, res)
+        let _res = write_event(state, json).await;
+        //    assert_eq!(200, res)
     }
 
     #[tokio::test]
@@ -88,10 +88,10 @@ mod test {
         let json = Json(event);
         let storage = Storage::new();
         let state = State(storage);
-       let _res = write_event(state.clone(), json).await;
+        let _res = write_event(state.clone(), json).await;
 
         let uri: Uri = "http://localhost:3000/events?".parse().unwrap();
         let query = Query::try_from_uri(&uri).unwrap();
-       let _res = read_event(state, query).await;
+        let _res = read_event(state, query).await;
     }
 }
