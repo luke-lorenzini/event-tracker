@@ -12,6 +12,13 @@ use crate::{
     types::{Event, EventTypes},
 };
 
+#[derive(Debug, Deserialize)]
+pub struct Params {
+    start: Option<u64>,
+    end: Option<u64>,
+    event_type: Option<EventTypes>,
+}
+
 pub async fn write_event(
     State(mut state): State<Storage>,
     Json(payload): Json<Event>,
@@ -26,14 +33,7 @@ pub async fn write_event(
 
     state.write_log_to_storage(event).await;
 
-    StatusCode::OK
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Params {
-    start: Option<u64>,
-    end: Option<u64>,
-    event_type: Option<EventTypes>,
+    StatusCode::OK.into_response()
 }
 
 pub async fn read_event(
@@ -46,21 +46,52 @@ pub async fn read_event(
     println!("end_time: {:?}", params.end);
     println!("event_type: {:?}", params.event_type);
 
-    let res = state
+    let logs = state
         .get_logs_in_range(params.start, params.end, params.event_type)
         .await;
-    let t = Json(res);
-    debug!("{t:?}");
-    (StatusCode::OK, t)
+    let json_logs = Json(logs);
+    debug!("{json_logs:?}");
+    (StatusCode::OK, json_logs)
 }
 
-// #[cfg(test)]
-// mod test {
-//     use super::*;
+#[cfg(test)]
+mod test {
+    use super::*;
 
-//     #[tokio::test]
-//     async fn test_write_event() {
-//         let payload = axum::Json::from("value");
-//         // let res = write_event(payload).await;
-//     }
-// }
+    use http::Uri;
+
+    use crate::get_current_time_in_ms;
+
+    #[tokio::test]
+    async fn test_write_event() {
+        let event_type = EventTypes::Yyz;
+        let event = Event {
+            payload: "a payload".into(),
+            timestamp: get_current_time_in_ms(),
+            event_type: event_type.clone(),
+        };
+        let json = Json(event);
+        let storage = Storage::new();
+        let state = State(storage);
+       let _res = write_event(state, json).await;
+    //    assert_eq!(200, res)
+    }
+
+    #[tokio::test]
+    async fn test_read_event() {
+        let event_type = EventTypes::Yyz;
+        let event = Event {
+            payload: "a payload".into(),
+            timestamp: get_current_time_in_ms(),
+            event_type: event_type.clone(),
+        };
+        let json = Json(event);
+        let storage = Storage::new();
+        let state = State(storage);
+       let _res = write_event(state.clone(), json).await;
+
+        let uri: Uri = "http://localhost:3000/events?".parse().unwrap();
+        let query = Query::try_from_uri(&uri).unwrap();
+       let _res = read_event(state, query).await;
+    }
+}

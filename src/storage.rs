@@ -2,14 +2,13 @@ use std::{
     collections::BTreeMap,
     ops::Bound::Included,
     sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use log::debug;
 use serde_json::Value;
 use tokio::sync::Mutex;
 
-use crate::types::{Event, EventTypes};
+use crate::{types::{Event, EventTypes} ,get_current_time_in_ms};
 
 type Log = (u64, (EventTypes, Value));
 
@@ -19,6 +18,7 @@ pub struct Storage {
 }
 
 impl Storage {
+    #[must_use]
     pub fn new() -> Self {
         let inner = Arc::new(Mutex::new(BTreeMap::new()));
 
@@ -73,17 +73,6 @@ impl Storage {
     }
 }
 
-// todo: fix me
-fn get_current_time_in_ms() -> u64 {
-    let now = SystemTime::now();
-    let since_the_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
-    let in_ms =
-        since_the_epoch.as_secs() * 1_000 + since_the_epoch.subsec_nanos() as u64 / 1_000_000_000;
-    println!("{since_the_epoch:?}");
-    println!("{in_ms:?}");
-    in_ms
-}
-
 #[cfg(test)]
 mod test {
     use std::{thread, time::Duration};
@@ -132,6 +121,78 @@ mod test {
         }
         let res = storage.inner.clone().lock().await.len();
         assert_eq!(number_of_logs, res)
+    }
+
+    #[tokio::test]
+    async fn test_write_then_read_log() {
+        let mut storage = Storage::new();
+        let event_type = EventTypes::Yyz;
+        let event = Event {
+            payload: "a payload".into(),
+            timestamp: get_current_time_in_ms(),
+            event_type: event_type.clone(),
+        };
+        storage.write_log_to_storage(event).await;
+
+        let res = storage.get_logs_in_range(None, None, None).await;
+        assert_eq!(1, res.len())
+    }
+
+    #[tokio::test]
+    async fn test_write_then_read_specifc_event() {
+        let mut storage = Storage::new();
+        let event_type = EventTypes::Yyz;
+        let event = Event {
+            payload: "a payload".into(),
+            timestamp: get_current_time_in_ms(),
+            event_type: event_type.clone(),
+        };
+        storage.write_log_to_storage(event).await;
+
+        let res = storage.get_logs_in_range(None, None, Some(event_type)).await;
+        assert_eq!(1, res.len())
+    }
+
+    #[tokio::test]
+    #[should_panic]
+    async fn test_write_historical_event() {
+        let mut storage = Storage::new();
+        let event_type = EventTypes::Yyz;
+        let event = Event {
+            payload: "a payload".into(),
+            timestamp: 0,
+            event_type: event_type.clone(),
+        };
+        storage.write_log_to_storage(event).await;
+
+        storage.get_logs_in_range(None, None, None).await;
+    }
+
+    #[tokio::test]
+    #[should_panic]
+    async fn test_invalid_time_range() {
+        let storage = Storage::new();
+        storage.get_logs_in_range(Some(10), Some(0), None).await;
+    }
+
+    #[tokio::test]
+    async fn test_valid_time_range() {
+        let mut storage = Storage::new();
+        let event_type = EventTypes::Yyz;
+        let event = Event {
+            payload: "a payload".into(),
+            timestamp: get_current_time_in_ms(),
+            event_type: event_type.clone(),
+        };
+        storage.write_log_to_storage(event).await;
+        storage.get_logs_in_range(Some(0), Some(10), None).await;
+    }
+
+    #[tokio::test]
+    #[should_panic]
+    async fn test_get_before_write() {
+        let storage = Storage::new();
+        storage.get_logs_in_range(None, None, None).await;
     }
 
     #[test]
