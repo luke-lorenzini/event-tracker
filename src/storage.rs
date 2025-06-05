@@ -6,14 +6,14 @@ use tokio::sync::Mutex;
 
 use crate::{
     get_current_time_in_ms,
-    types::{Event, EventTypes},
+    types::{Event, EventType},
 };
 
-type Log = (u64, (EventTypes, Value));
+type Log = (u64, (EventType, Value));
 
 #[derive(Clone, Default)]
 pub struct Storage {
-    inner: Arc<Mutex<BTreeMap<u64, (EventTypes, Value)>>>,
+    inner: Arc<Mutex<BTreeMap<u64, (EventType, Value)>>>,
 }
 
 impl Storage {
@@ -28,7 +28,7 @@ impl Storage {
         &self,
         start_time: Option<u64>,
         end_time: Option<u64>,
-        event_type: Option<EventTypes>,
+        event_type: Option<EventType>,
     ) -> Vec<Log> {
         debug!("start_range: {start_time:?} end_range: {end_time:?} event_type: {event_type:?}");
         if let (Some(start_time), Some(end_time)) = (start_time, end_time) {
@@ -44,7 +44,12 @@ impl Storage {
         }
 
         let start_time = start_time.unwrap_or(0);
-        let end_time = end_time.unwrap_or(*inner.last_key_value().unwrap().0);
+        let end_time = end_time.unwrap_or(
+            *inner
+                .last_key_value()
+                .expect("Already ensured non-empty tree")
+                .0,
+        );
 
         match event_type {
             Some(event_type) => inner
@@ -67,8 +72,7 @@ impl Storage {
 
         let mut inner = self.inner.lock().await;
         let _res = inner.insert(event.timestamp, (event.event_type, event.payload));
-        // println!("result of insert: {res:?}");
-        println!("inner: {inner:?}");
+        debug!("inner: {inner:?}");
     }
 }
 
@@ -87,7 +91,7 @@ mod test {
 
     #[tokio::test]
     async fn test_write_single_log() {
-        let event_type = EventTypes::Yyz;
+        let event_type = EventType::Yyz;
         let event = Event {
             payload: "a payload".into(),
             timestamp: get_current_time_in_ms(),
@@ -106,7 +110,7 @@ mod test {
         let number_of_logs = 10;
         let storage = Storage::new();
         for _ in 0..number_of_logs {
-            let event_type = EventTypes::Yyz;
+            let event_type = EventType::Yyz;
             let event = Event {
                 payload: "a payload".into(),
                 timestamp: get_current_time_in_ms(),
@@ -125,7 +129,7 @@ mod test {
     #[tokio::test]
     async fn test_write_then_read_log() {
         let mut storage = Storage::new();
-        let event_type = EventTypes::Yyz;
+        let event_type = EventType::Yyz;
         let event = Event {
             payload: "a payload".into(),
             timestamp: get_current_time_in_ms(),
@@ -140,7 +144,7 @@ mod test {
     #[tokio::test]
     async fn test_write_then_read_specifc_event() {
         let mut storage = Storage::new();
-        let event_type = EventTypes::Yyz;
+        let event_type = EventType::Yyz;
         let event = Event {
             payload: "a payload".into(),
             timestamp: get_current_time_in_ms(),
@@ -158,7 +162,7 @@ mod test {
     #[should_panic]
     async fn test_write_historical_event() {
         let mut storage = Storage::new();
-        let event_type = EventTypes::Yyz;
+        let event_type = EventType::Yyz;
         let event = Event {
             payload: "a payload".into(),
             timestamp: 0,
@@ -179,7 +183,7 @@ mod test {
     #[tokio::test]
     async fn test_valid_time_range() {
         let mut storage = Storage::new();
-        let event_type = EventTypes::Yyz;
+        let event_type = EventType::Yyz;
         let event = Event {
             payload: "a payload".into(),
             timestamp: get_current_time_in_ms(),
