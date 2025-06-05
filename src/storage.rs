@@ -7,8 +7,11 @@ use std::{
 
 use log::debug;
 use serde_json::Value;
+// use tokio::sync::Mutex;
 
-use crate::{Event, EventTypes};
+use crate::types::{Event, EventTypes};
+
+type Log = (u64, (EventTypes, Value));
 
 #[derive(Clone, Default)]
 pub struct Storage {
@@ -22,29 +25,47 @@ impl Storage {
         Storage { inner }
     }
 
-    pub fn get_log_range(&self, start_time: u64, end_time: u64, event_type: Option<EventTypes>) {
-        if start_time > end_time {
-            todo!("Range invalid")
-        }
+    pub fn get_logs_in_range(
+        &self,
+        start_time: Option<u64>,
+        end_time: Option<u64>,
+        event_type: Option<EventTypes>,
+    ) -> Vec<Log> {
         debug!("start_range: {start_time:?} end_range: {end_time:?} event_type: {event_type:?}");
+        if let (Some(start_time), Some(end_time)) = (start_time, end_time) {
+            if start_time > end_time {
+                todo!("Range invalid")
+            }
+        }
+
         let inner = self.inner.clone();
         let inner = inner.lock().unwrap();
-        let res: Vec<_> = inner
+
+        let start_time = start_time.unwrap_or(0);
+        // todo: protect against empty trrtee
+        let end_time = end_time.unwrap_or(*inner.last_key_value().unwrap().0);
+
+        // let res: Vec<_> =
+        inner
             .range((Included(start_time), Included(end_time)))
-            // .filter(|f| f.1.0 == event_type)
-            .collect();
-        println!("res: {res:?}");
+            // .filter(predicate)
+            .map(|(k, v)| (*k, v.clone()))
+            .collect()
+        // ;
+        // println!("res: {res:?}");
+        // res
     }
 
-    pub fn write_log(&mut self, event: Event) {
+    pub fn write_log_to_storage(&mut self, event: Event) {
+        debug!("event: {event:?}");
         if event.timestamp < get_current_time_in_ms() {
             todo!("Cannot log historical events")
         }
-        println!("event: {event:?}");
+
         let inner = self.inner.clone();
         let mut inner = inner.lock().unwrap();
-        let res = inner.insert(event.timestamp, (event.event_type, event.payload));
-        println!("result of insert: {res:?}");
+        let _res = inner.insert(event.timestamp, (event.event_type, event.payload));
+        // println!("result of insert: {res:?}");
         println!("inner: {inner:?}");
     }
 }
@@ -66,7 +87,9 @@ mod test {
     #[test]
     fn test_new() {
         let storage = Storage::new();
-        assert!(storage.inner.clone().lock().unwrap().is_empty())
+        let inner = storage.inner.clone();
+        let inner = inner.lock().unwrap();
+        assert!(inner.is_empty())
     }
 
     #[test]
@@ -78,20 +101,10 @@ mod test {
             event_type: event_type.clone(),
         };
         let storage = Storage::new();
-        storage
-            .inner
-            .clone()
-            .lock()
-            .unwrap()
-            .insert(event.timestamp, (event.event_type, event.payload));
-        let res = storage
-            .inner
-            .clone()
-            .lock()
-            .unwrap()
-            .get(&event.timestamp)
-            .unwrap()
-            .clone();
+        let inner = storage.inner.clone();
+        let mut inner = inner.lock().unwrap();
+        inner.insert(event.timestamp, (event.event_type, event.payload));
+        let res = inner.get(&event.timestamp).unwrap().clone();
         let expected = event_type;
         assert_eq!(expected, res.0)
     }
