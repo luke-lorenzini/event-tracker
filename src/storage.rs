@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, ops::Bound::Included, sync::Arc};
 
 use log::debug;
 use serde_json::Value;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 
 use crate::{
     get_current_time_in_ms,
@@ -14,14 +14,14 @@ type Log = (u64, (LogType, Value));
 /// A wrapper around the container type to store the logs. This can (and is intended to be) swapped out in the future with a more robust type, like a database.
 #[derive(Clone, Default)]
 pub struct Storage {
-    inner: Arc<Mutex<BTreeMap<u64, (LogType, Value)>>>,
+    inner: Arc<RwLock<BTreeMap<u64, (LogType, Value)>>>,
 }
 
 impl Storage {
     /// Create a new instance to store a set of logs in.
     #[must_use]
     pub fn new() -> Self {
-        let inner = Arc::new(Mutex::new(BTreeMap::new()));
+        let inner = Arc::new(RwLock::new(BTreeMap::new()));
 
         Storage { inner }
     }
@@ -46,7 +46,7 @@ impl Storage {
             }
         }
 
-        let inner = self.inner.lock().await;
+        let inner = self.inner.read().await;
 
         if inner.is_empty() {
             return Err(ErrorTypes::EmptyLogFile);
@@ -77,7 +77,7 @@ impl Storage {
             return Err(ErrorTypes::InvalidRange("Cannot log future events".into()));
         }
 
-        let mut inner = self.inner.lock().await;
+        let mut inner = self.inner.write().await;
         let _res = inner.insert(event.timestamp, (event.log_type, event.payload));
         debug!("inner: {inner:?}");
 
@@ -94,7 +94,7 @@ mod test {
     #[tokio::test]
     async fn test_new() {
         let storage = Storage::new();
-        let inner = storage.inner.lock().await;
+        let inner = storage.inner.read().await;
         assert!(inner.is_empty())
     }
 
@@ -107,7 +107,7 @@ mod test {
             log_type: event_type.clone(),
         };
         let storage = Storage::new();
-        let mut inner = storage.inner.lock().await;
+        let mut inner = storage.inner.write().await;
         inner.insert(event.timestamp, (event.log_type, event.payload));
         let res = inner.get(&event.timestamp).unwrap().clone();
         let expected = event_type;
@@ -128,10 +128,10 @@ mod test {
 
             thread::sleep(Duration::from_millis(1));
 
-            let mut inner = storage.inner.lock().await;
+            let mut inner = storage.inner.write().await;
             inner.insert(event.timestamp, (event.log_type, event.payload));
         }
-        let res = storage.inner.clone().lock().await.len();
+        let res = storage.inner.clone().read().await.len();
         assert_eq!(number_of_logs, res)
     }
 
