@@ -1,13 +1,13 @@
 use std::{thread, time::Duration};
 
-use event_tracker::{app, get_current_time_in_ms};
-use axum::{body::Body, http::{Request, StatusCode}};
-use tower::ServiceExt;
-use serde_json::{
-    json, 
-    
+use axum::{
+    body::Body,
+    http::{Request, StatusCode},
 };
+use event_tracker::{app, get_current_time_in_ms};
 use http_body_util::BodyExt;
+use serde_json::json;
+use tower::ServiceExt;
 
 // Summary of this test. Write three events to the log of 2 different types. Query the log to receive just one type back. Should see two records returned.
 #[tokio::test]
@@ -84,17 +84,12 @@ async fn test_request_specific_events() {
         .body(Body::empty())
         .unwrap();
 
-    let res = app
-        .clone()
-        .oneshot(
-            req
-        )
-        .await
-        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(StatusCode::OK, res.status());
 
     let collected = res.into_body().collect().await.unwrap();
-    let parsed: Result<Vec<(u64, [String; EXPECTED_VECTOR_SIZE])>,_> = serde_json::from_slice(&collected.to_bytes());
+    let parsed: Result<Vec<(u64, [String; EXPECTED_VECTOR_SIZE])>, _> =
+        serde_json::from_slice(&collected.to_bytes());
     println!("{parsed:?}");
     assert!(parsed.is_ok());
 }
@@ -131,15 +126,8 @@ async fn test_request_events_that_dont_exist() {
         .body(Body::empty())
         .unwrap();
 
-    let res = app
-        .clone()
-        .oneshot(
-            req
-        )
-        .await
-        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(StatusCode::BAD_REQUEST, res.status());
-
 }
 
 // Attempt to write a log of a type which doesn't exist.

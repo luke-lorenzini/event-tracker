@@ -1,12 +1,16 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use log::debug;
 use axum::{
     Router,
     routing::{get, post},
 };
+use log::debug;
 
-use crate::{types::TrackerResult, storage::Storage, web::{health_check,read_events,write_event,root}};
+use crate::{
+    storage::Storage,
+    types::TrackerResult,
+    web::{health_check, read_events, root, write_event},
+};
 
 /// An abstraction over a container to store the logs in.
 pub mod storage;

@@ -1,6 +1,4 @@
-use event_tracker::
-    app
-;
+use event_tracker::app;
 
 #[tokio::main]
 async fn main() {
