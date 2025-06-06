@@ -23,17 +23,25 @@ The program operates on several assumptions, and these have been incorporated in
 
 The above can be easily changed to Mutex/HashMap if requirements change. Additionally, if logs are expected more frequently than 1kHz, we can use microseconds.
 
-Other points on design worth mentioning, `web.rs`, `types.rs`, and `storage.rs` have been completely isolated from on another for a modular, decoupled design.
+Other points on design worth mentioning, `web.rs`, `types.rs`, and `storage.rs` have been completely isolated from one another for a modular, decoupled design.
 
 Regarding storage, currently in a BTree. By wrapping the container and exposing read and write functions the underlying storage type can be easily swapped in the future. Options like HashMap, DashMap, or even a non-volatile database are perfectly valid options without out too much fuss.
 
 IP rate limiting has been added using the `tower_governor` crate. It is configurable to allow integration testing to work quickly. Configuration can be found in `lib.rs` as per documentation found on crates.io. To test this, simply run the program, open `http://localhost:3000/` in your browser and refresh quickly (no, this test would not be used in production, but we're running out of daylight here).
 
+### Docker
+
+A simple build script has been created to kick off a docker build. Simply run the following to generate a docker image.
+
+```bash
+./build.sh
+```
+
 ## Events
 
 ### `write_event`
 
-`write_event` is used to write a single log event to the ledger. It requires three parameters, a `log_type`, a `timestamp` and a `payload`. `log_type` comes from an enumerated list which can be found in `types.rs`. `timestamp` is a `u64` which cannot be greater than the current system time. `payload` is a free-form log which can be any well-formed json message.
+`write_event` is used to write a single log event to the ledger. It requires three parameters, a `log_type`, a `timestamp` and a `payload`. `log_type` comes from an enumerated list which can be found in `types.rs`. A decision was made to only allow logs of a known type. This limitation can be removed easily should requirements change. `timestamp` is a `u64` which cannot be greater than the current system time. `payload` is a free-form log which can be any well-formed json message.
 
 An example of `write_event` could be:
 
@@ -51,7 +59,7 @@ curl -d "{\"log_type\":\"yyz\",\"timestamp\":$(date +%s%3N),\"payload\":{\"name\
 curl -X GET 'http://localhost:3000/events?start=1749207505632&end=1749207515632&log_type=xxx'
 ```
 
-The parameters are all optional. If a `log_type` is not specified, all log types are returned. If a `start` or `end` are not specified, the range will default to beginning to end.
+The parameters are all optional. If a `log_type` is not specified, all log types are returned. If a `start` or `end` are not specified, the range will default to the first and last logs stored (i.e. the entire log).
 
 ## Testing
 
