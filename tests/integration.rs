@@ -13,7 +13,7 @@ use tower::ServiceExt;
 #[tokio::test]
 async fn test_request_specific_events() {
     const EXPECTED_VECTOR_SIZE: usize = 2;
-    let app = app();
+    let app = app(false);
 
     let event1 = json!({
         "payload": "event 1",
@@ -97,7 +97,7 @@ async fn test_request_specific_events() {
 // Log an event than request a log type that hasn't been logged. Expect a bad result.
 #[tokio::test]
 async fn test_request_events_that_dont_exist() {
-    let app = app();
+    let app = app(false);
 
     let event1 = json!({
         "payload": "event 1",
@@ -133,7 +133,7 @@ async fn test_request_events_that_dont_exist() {
 // Attempt to write a log of a type which doesn't exist.
 #[tokio::test]
 async fn test_log_that_doesnt_exist() {
-    let app = app();
+    let app = app(false);
 
     let event1 = json!({
         "payload": "event 1",

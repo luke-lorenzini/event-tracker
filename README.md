@@ -23,6 +23,12 @@ The program operates on several assumptions, and these have been incorporated in
 
 The above can be easily changed to Mutex/HashMap if requirements change. Additionally, if logs are expected more frequently than 1kHz, we can use microseconds.
 
+Other points on design worth mentioning, `web.rs`, `types.rs`, and `storage.rs` have been completely isolated from on another for a modular, decoupled design.
+
+Regarding storage, currently in a BTree. By wrapping the container and exposing read and write functions the underlying storage type can be easily swapped in the future. Options like HashMap, DashMap, or even a non-volatile database are perfectly valid options without out too much fuss.
+
+IP rate limiting has been added using the `tower_governor` crate. It is configurable to allow integration testing to work quickly. Configuration can be found in `lib.rs` as per documentation found on crates.io. To test this, simply run the program, open `http://localhost:3000/` in your browser and refresh quickly (no, this test would not be used in production, but we're running out of daylight here).
+
 ## Events
 
 ### `write_event`

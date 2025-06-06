@@ -1,10 +1,15 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    sync::Arc,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use axum::{
     Router,
     routing::{get, post},
 };
 use log::debug;
+use tokio::time::sleep;
+use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 
 use crate::{
     storage::Storage,
@@ -20,6 +25,7 @@ pub mod types;
 pub mod web;
 
 /// Return the current time in ms.
+#[allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
 pub fn get_current_time_in_ms() -> TrackerResult<u64> {
     let since_the_epoch =
         u64::try_from(SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis()).unwrap();
@@ -28,12 +34,39 @@ pub fn get_current_time_in_ms() -> TrackerResult<u64> {
 }
 
 /// Create the Axum router endpoints (with state).
-pub fn app() -> Router {
+#[allow(clippy::missing_panics_doc)]
+pub fn app(rate_limiting: bool) -> Router {
     let state = Storage::new();
-    Router::new()
+
+    let mut router = Router::new()
         .route("/", get(root))
         .route("/health", get(health_check))
         .route("/events", post(write_event))
         .route("/events", get(read_events))
-        .with_state(state)
+        .with_state(state);
+
+    if rate_limiting {
+        let governor_conf = Arc::new(
+            GovernorConfigBuilder::default()
+                .per_second(2)
+                .burst_size(5)
+                .finish()
+                .expect("Ensured burst_size non-zero"),
+        );
+
+        let governor_limiter = governor_conf.limiter().clone();
+        let interval = Duration::from_secs(60);
+        tokio::spawn(async move {
+            loop {
+                sleep(interval).await;
+                governor_limiter.retain_recent();
+            }
+        });
+
+        router = router.layer(GovernorLayer {
+            config: governor_conf,
+        });
+    }
+
+    router
 }
