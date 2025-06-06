@@ -1,4 +1,6 @@
-# README.md
+# event-tracker
+
+[![Rust](https://github.com/luke-lorenzini/event-tracker/actions/workflows/rust.yml/badge.svg)](https://github.com/luke-lorenzini/event-tracker/actions/workflows/rust.yml)
 
 Welcome to `event-tracker`.
 
